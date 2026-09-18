@@ -9,7 +9,7 @@
   var API_KEY = 'c04c9c4a7e6845f380c5e60cf59852ff';
   var PRICE_URL = 'https://api.twelvedata.com/price?symbol=XAU/USD&apikey=' + API_KEY;
   var SERIES_URL = 'https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1min&outputsize=60&apikey=' + API_KEY;
-  var REFRESH_MS = Math.floor(60000 / 8); // 7500 ms = 8 بار در دقیقه
+  var REFRESH_MS = 7 * 1000; // هر ۷ ثانیه یک‌بار
   var FREE_QUOTA_TOTAL = 800;
   var FREE_QUOTA_DAYS = 1;
   var QUOTA_KEY = 'mm_api_quota_td_v1';
@@ -137,6 +137,27 @@
 
   loadQuota();
 
+
+  /** FOREX.com (FOREXCOM) quote via TradingView scanner — display only, not for calcs */
+  function fetchForexComPrice() {
+    var url = 'https://scanner.tradingview.com/symbol?symbol=FOREXCOM%3AXAUUSD&fields=close,bid,ask';
+    return fetch(url)
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        var mid = null;
+        if (data && typeof data.bid === 'number' && typeof data.ask === 'number') {
+          mid = (data.bid + data.ask) / 2;
+        } else if (data && typeof data.close === 'number') {
+          mid = data.close;
+        }
+        if (!isFinite(mid) || mid <= 0) throw new Error('invalid FOREXCOM price');
+        return { price: mid, bid: data.bid, ask: data.ask, close: data.close, source: 'FOREXCOM' };
+      });
+  }
+
   global.MM_API = {
     REFRESH_MS: REFRESH_MS,
     FREE_QUOTA_TOTAL: FREE_QUOTA_TOTAL,
@@ -149,5 +170,6 @@
     stop: stop,
     fetchPrice: fetchPrice,
     fetchSeries: fetchSeries,
+    fetchForexComPrice: fetchForexComPrice,
   };
 })(window);

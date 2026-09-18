@@ -76,6 +76,8 @@
           <div class="chart-src-tabs" id="chartSrcTabs">
             <button type="button" class="active" data-src="live" id="btnChartLive">Live</button>
             <button type="button" data-src="tv" id="btnChartTv">TradingView</button>
+            <button type="button" data-tvstyle="1" id="btnTvCandle" style="display:none">Candle</button>
+            <button type="button" data-tvstyle="3" id="btnTvLine" style="display:none">Line</button>
           </div>
           <button type="button" class="ghost-btn" id="chartToggleBtn">پنهان کردن نمودار</button>
         </div>
@@ -88,7 +90,7 @@
       </div>
 
       <div class="manual-price-box">
-        <p class="manual-price-hint" id="priceHint">قیمت لحظه‌ای یکبار در 7 ثانیه</p>
+        <p class="manual-price-hint" id="priceHint">قیمت لحظه‌ای · هر ۷ ثانیه یک‌بار</p>
         <div class="manual-price-wrap" dir="ltr">
           <span class="currency-sign">$</span>
           <input id="manualGoldPrice" type="number" step="0.001" placeholder="—" inputmode="decimal">
@@ -103,8 +105,7 @@
             <span id="apiToggleLabel">خاموش</span>
           </div>
           <div class="api-quota">
-            <strong id="remainingRequests">800</strong>
-            <br><span id="quotaDaysInfo">Twelve Data</span>
+            <strong id="quotaTotal">800</strong>/<strong id="remainingRequests">800</strong>
           </div>
         </div>
       </div>
@@ -116,7 +117,6 @@
         <article class="card calc-card">
           <h3 id="equivTolaTitle">معادل فی توله</h3>
           <p class="calc-value" dir="ltr">$<span id="equivPrice">—</span></p>
-          <p class="calc-note" dir="ltr" id="equivNote">oz ÷ <span id="divisorLabel">2.56</span></p>
         </article>
         <article class="card calc-card">
           <h3><label for="kabulPriceInput" id="kabulBuyLabel">خرید فی توله کابل ($)</label></h3>
@@ -167,7 +167,6 @@
         <article class="card calc-card">
           <h3 id="totalLiveTitle">ارزش کل</h3>
           <p class="calc-value" dir="ltr" id="totalLivePrice">—</p>
-          <p class="calc-note" dir="ltr">g:<span id="kgToGram">—</span> · t:<span id="kgToTola">—</span> · oz:<span id="kgToOunce">—</span></p>
         </article>
         <article class="card calc-card calc-card-diff" id="kgDiffCard">
           <h3>Δ</h3>

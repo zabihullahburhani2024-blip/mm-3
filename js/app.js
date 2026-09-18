@@ -16,7 +16,7 @@
   var LANG_KEY = 'mm_lang';
   var THEME_KEY = 'mm_theme';
 
-  window.MM_STATE = { lang: localStorage.getItem(LANG_KEY) || 'fa', goldPrice: null };
+  window.MM_STATE = { lang: localStorage.getItem(LANG_KEY) || 'fa', goldPrice: null, forexComPrice: null };
 
   var el = {};
   var _syncingWeight = false;
@@ -39,7 +39,15 @@
       badge.textContent = on ? t('statusActive') : t('statusInactive');
     }
     if (daysLabel) daysLabel.textContent = t('daysLeft');
-    if (daysVal) daysVal.textContent = on ? String(MM_AUTH.remainingDays(sess)) : '—';
+    if (daysVal) {
+      if (on && sess) {
+        var left = MM_AUTH.remainingDays(sess);
+        var total = (window.MM_ACTIVATION && MM_ACTIVATION.ACTIVATION_DAYS) || 365;
+        daysVal.textContent = String(left) + ' / ' + String(total);
+      } else {
+        daysVal.textContent = '0 / 365';
+      }
+    }
     if (goAct) {
       goAct.style.display = on ? 'none' : 'inline-block';
       goAct.textContent = t('btnActivate');
@@ -125,10 +133,7 @@
     Object.keys(map).forEach(function (id) {
       if (el[id]) el[id].textContent = t(map[id]);
     });
-    if (el.equivNote) el.equivNote.textContent = t('equivNote', { d: DIVISOR });
-    if (el.divisorLabel) el.divisorLabel.textContent = String(DIVISOR);
     if (el.manualGoldPrice) el.manualGoldPrice.placeholder = t('pricePlaceholder');
-    if (el.quotaDaysInfo) el.quotaDaysInfo.textContent = t('quotaDaily');
     var on = MM_API.isAutoOn();
     if (el.apiToggleLabel) el.apiToggleLabel.textContent = on ? t('apiOn') : t('apiOffLabel');
     if (el.chartToggleBtn) {
@@ -173,12 +178,33 @@
 
   function applyGoldPrice(price) {
     if (!isFinite(price) || price <= 0) return;
-    window.MM_STATE.goldPrice = price;
+    window.MM_STATE.goldPrice = price; // Twelve Data — used in all calculations
     if (el.manualGoldPrice) el.manualGoldPrice.value = price.toFixed(3);
     localStorage.setItem('mm_manual_gold_price', String(price));
+    var tl = document.getElementById('twelvePriceLabel');
+    if (tl) tl.textContent = '$' + price.toFixed(2);
     MM_CHART.pushPrice(price);
     recalcKabul();
     recalcKg(null);
+  }
+
+  /** FOREX.com rate — stored only for display/compare, NEVER used in calculations */
+  function applyForexComPrice(info) {
+    var price = info && typeof info === 'object' ? info.price : info;
+    if (!isFinite(price) || price <= 0) return;
+    window.MM_STATE.forexComPrice = price;
+    var elF = document.getElementById('forexComPriceLabel');
+    if (elF) elF.textContent = '$' + Number(price).toFixed(2);
+  }
+
+  function refreshForexComPrice() {
+    if (!window.MM_API || !MM_API.fetchForexComPrice) return;
+    MM_API.fetchForexComPrice()
+      .then(function (info) { applyForexComPrice(info); })
+      .catch(function () {
+        var elF = document.getElementById('forexComPriceLabel');
+        if (elF && window.MM_STATE.forexComPrice == null) elF.textContent = '—';
+      });
   }
 
   function onManualPriceInput() {
@@ -303,20 +329,19 @@
 
   function updateQuotaUI() {
     var rem = MM_API.getRemaining();
+    var total = MM_API.FREE_QUOTA_TOTAL;
+    var totEl = document.getElementById('quotaTotal');
+    if (totEl) totEl.textContent = String(total);
     if (el.remainingRequests) {
       el.remainingRequests.textContent = String(rem);
       el.remainingRequests.className = rem <= 50 ? 'quota-warn' : '';
     }
-    if (el.quotaDaysInfo) el.quotaDaysInfo.textContent = t('quotaDaily') + ' · ' + MM_API.FREE_QUOTA_TOTAL;
   }
 
   function onApiPrice(price) {
     applyGoldPrice(price);
-    var timeStr = new Date().toLocaleTimeString(
-      window.MM_STATE.lang === 'en' ? 'en-US' : 'fa-IR',
-      { hour: '2-digit', minute: '2-digit', second: '2-digit' }
-    );
-    setPriceStatus(t('lastUpdate') + ': ' + timeStr + ' · ' + t('sourceTwelve') + ' · ' + t('every8'), false);
+    refreshForexComPrice();
+    if (el.priceStatus) el.priceStatus.textContent = '';
     updateQuotaUI();
     if (el.apiToggleLabel) el.apiToggleLabel.textContent = t('apiOn');
   }
@@ -378,9 +403,11 @@
   var _chartSrc = localStorage.getItem('mm_chart_src') || 'live';
   var _tvInited = false;
 
+  var _tvStyle = localStorage.getItem('mm_tv_style') || '1'; // 1=candle, 3=line
+
   function initTradingViewEmbed() {
     var wrap = document.getElementById('tvChartWrap');
-    if (!wrap || _tvInited) return;
+    if (!wrap) return;
     wrap.innerHTML = '';
     var isDark = document.documentElement.getAttribute('data-theme') !== 'light';
     var iframe = document.createElement('iframe');
@@ -390,11 +417,16 @@
     iframe.setAttribute('frameborder', '0');
     iframe.style.width = '100%';
     iframe.style.height = '100%';
-    // Official TradingView embed widget via iframe
     var theme = isDark ? 'dark' : 'light';
-    iframe.src = 'https://s.tradingview.com/widgetembed/?frameElementId=tv_xau&symbol=OANDA%3AXAUUSD&interval=60&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0b0a09&theme=' + theme + '&style=1&timezone=Asia%2FKabul&withdateranges=1&studies=%5B%5D&hideideas=1&locale=' + (window.MM_STATE.lang === 'en' ? 'en' : 'fa_IR');
+    var style = (_tvStyle === '3') ? '3' : '1';
+    // hidelegend + no details → without OHLC panel
+    iframe.src = 'https://s.tradingview.com/widgetembed/?frameElementId=tv_xau&symbol=OANDA%3AXAUUSD&interval=60&hidesidetoolbar=1&hidetoptoolbar=0&symboledit=0&saveimage=0&toolbarbg=0b0a09&theme=' + theme + '&style=' + style + '&timezone=Asia%2FKabul&withdateranges=0&hideideas=1&hidevolume=1&hidelegend=1&disabled_features=%5B%22header_widget%22%2C%22left_toolbar%22%2C%22create_volume_indicator_by_default%22%2C%22legend_widget%22%2C%22timeframes_toolbar%22%5D&locale=' + (window.MM_STATE.lang === 'en' ? 'en' : 'fa_IR');
     wrap.appendChild(iframe);
     _tvInited = true;
+    var bC = document.getElementById('btnTvCandle');
+    var bL = document.getElementById('btnTvLine');
+    if (bC) { bC.style.display = 'inline-block'; bC.classList.toggle('active', style === '1'); }
+    if (bL) { bL.style.display = 'inline-block'; bL.classList.toggle('active', style === '3'); }
   }
 
   function setChartSource(src) {
@@ -409,15 +441,39 @@
     if (tv) tv.style.display = src === 'tv' ? 'block' : 'none';
     if (bLive) bLive.classList.toggle('active', src === 'live');
     if (bTv) bTv.classList.toggle('active', src === 'tv');
-    if (src === 'tv') initTradingViewEmbed();
-    if (src === 'live') MM_CHART.draw();
+    var bC = document.getElementById('btnTvCandle');
+    var bL = document.getElementById('btnTvLine');
+    if (src === 'tv') {
+      _tvInited = false;
+      initTradingViewEmbed();
+      if (bC) bC.style.display = 'inline-block';
+      if (bL) bL.style.display = 'inline-block';
+    } else {
+      if (bC) bC.style.display = 'none';
+      if (bL) bL.style.display = 'none';
+      MM_CHART.draw();
+    }
   }
 
   function bindChartSourceTabs() {
     var bLive = document.getElementById('btnChartLive');
     var bTv = document.getElementById('btnChartTv');
+    var bC = document.getElementById('btnTvCandle');
+    var bL = document.getElementById('btnTvLine');
     if (bLive) bLive.addEventListener('click', function () { setChartSource('live'); });
     if (bTv) bTv.addEventListener('click', function () { setChartSource('tv'); });
+    if (bC) bC.addEventListener('click', function () {
+      _tvStyle = '1';
+      localStorage.setItem('mm_tv_style', '1');
+      _tvInited = false;
+      if (_chartSrc === 'tv') initTradingViewEmbed();
+    });
+    if (bL) bL.addEventListener('click', function () {
+      _tvStyle = '3';
+      localStorage.setItem('mm_tv_style', '3');
+      _tvInited = false;
+      if (_chartSrc === 'tv') initTradingViewEmbed();
+    });
     setChartSource(_chartSrc);
   }
 
@@ -499,7 +555,10 @@
 
     bindNav();
     bindApiToggle();
-    if (isUnlocked()) loadInitialSeries();
+    if (isUnlocked()) {
+      loadInitialSeries();
+      refreshForexComPrice();
+    }
 
     if (window.MM_STATE.goldPrice) { recalcKabul(); recalcKg('gram'); }
     else recalcKg('gram');
