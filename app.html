@@ -13,11 +13,23 @@
   <style>
     .chart-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
     .chart-toolbar h3 { margin:0; font-size:.95rem; }
-    #liveChartWrap {
-      height: 240px; border-radius: 12px; overflow: hidden;
+    #chartPanel {
+      border-radius: 12px; overflow: hidden;
       border: 1px solid var(--border); background: var(--bg-secondary);
     }
+    #liveChartWrap, #tvChartWrap {
+      height: 240px; width: 100%;
+    }
     #liveChart { width: 100%; height: 100%; display: block; }
+    #tvChartWrap iframe { width: 100%; height: 100%; border: 0; }
+    .chart-src-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chart-src-tabs button {
+      background: var(--card); border: 1px solid var(--border); color: var(--text-soft);
+      border-radius: 10px; padding: 6px 10px; font-size: .75rem; font-weight: 600; cursor: pointer;
+    }
+    .chart-src-tabs button.active { border-color: var(--gold); color: var(--gold); }
+    .feature-locked { opacity: 0.45; pointer-events: none; filter: grayscale(0.3); }
+    .feature-locked input, .feature-locked button { pointer-events: none; }
     .ghost-btn {
       background: var(--card); border: 1px solid var(--border); color: var(--gold);
       border-radius: 10px; padding: 6px 12px; font-size: .78rem; font-weight: 600; cursor: pointer;
@@ -47,17 +59,36 @@
   </header>
 
   <main class="container">
+    <div class="card" id="activationBar" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px">
+      <div>
+        <span id="statusBadge" class="activation-status inactive">—</span>
+        <span style="margin-inline-start:10px;font-size:.85rem;color:var(--text-soft)">
+          <span id="daysLeftLabel">—</span>: <strong id="daysLeftValue">—</strong>
+        </span>
+      </div>
+      <button type="button" class="ghost-btn" id="btnGoActivate" style="display:none">فعال‌سازی</button>
+    </div>
+    <p id="lockedHint" class="price-note" style="display:none;margin-bottom:12px"></p>
     <section class="card chart-card" id="top">
       <div class="chart-toolbar">
-        <h3 id="chartTitle">نمودار زنده XAU/USD</h3>
-        <button type="button" class="ghost-btn" id="chartToggleBtn">پنهان کردن نمودار</button>
+        <h3 id="chartTitle">نمودار XAU/USD</h3>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="chart-src-tabs" id="chartSrcTabs">
+            <button type="button" class="active" data-src="live" id="btnChartLive">Live</button>
+            <button type="button" data-src="tv" id="btnChartTv">TradingView</button>
+          </div>
+          <button type="button" class="ghost-btn" id="chartToggleBtn">پنهان کردن نمودار</button>
+        </div>
       </div>
-      <div id="liveChartWrap">
-        <canvas id="liveChart"></canvas>
+      <div id="chartPanel">
+        <div id="liveChartWrap">
+          <canvas id="liveChart"></canvas>
+        </div>
+        <div id="tvChartWrap" style="display:none"></div>
       </div>
 
       <div class="manual-price-box">
-        <p class="manual-price-hint" id="priceHint">قیمت لحظه‌ای · Twelve Data · ۸ بار در دقیقه</p>
+        <p class="manual-price-hint" id="priceHint">قیمت لحظه‌ای یکبار در 7 ثانیه</p>
         <div class="manual-price-wrap" dir="ltr">
           <span class="currency-sign">$</span>
           <input id="manualGoldPrice" type="number" step="0.001" placeholder="—" inputmode="decimal">
@@ -158,7 +189,8 @@
 
   <script src="js/codes.js"></script>
   <script src="js/i18n.js"></script>
-  <script src="js/auth.js"></script>
+  <script src="js/activation.js"></script>
+  <script src="js/register.js"></script>
   <script src="js/api.js"></script>
   <script src="js/chart.js"></script>
   <script src="js/app.js"></script>

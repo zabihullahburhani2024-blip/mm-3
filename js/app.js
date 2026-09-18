@@ -4,8 +4,8 @@
 (function () {
   'use strict';
 
-  // Gate: must be logged in + activated
-  if (!window.MM_AUTH || !MM_AUTH.requireActivated()) {
+  // Gate: must be logged in (activation unlocks features)
+  if (!window.MM_AUTH || !MM_AUTH.requireLogin()) {
     location.href = 'register.html';
     return;
   }
@@ -20,6 +20,72 @@
 
   var el = {};
   var _syncingWeight = false;
+
+  function isUnlocked() {
+    return MM_AUTH.requireActivated();
+  }
+
+  function applyAccessControl() {
+    var on = isUnlocked();
+    var sess = MM_AUTH.getSession();
+    var badge = document.getElementById('statusBadge');
+    var daysLabel = document.getElementById('daysLeftLabel');
+    var daysVal = document.getElementById('daysLeftValue');
+    var goAct = document.getElementById('btnGoActivate');
+    var lockedHint = document.getElementById('lockedHint');
+
+    if (badge) {
+      badge.className = 'activation-status ' + (on ? 'active' : 'inactive');
+      badge.textContent = on ? t('statusActive') : t('statusInactive');
+    }
+    if (daysLabel) daysLabel.textContent = t('daysLeft');
+    if (daysVal) daysVal.textContent = on ? String(MM_AUTH.remainingDays(sess)) : '—';
+    if (goAct) {
+      goAct.style.display = on ? 'none' : 'inline-block';
+      goAct.textContent = t('btnActivate');
+      goAct.onclick = function () { location.href = 'register.html'; };
+    }
+    if (lockedHint) {
+      lockedHint.style.display = on ? 'none' : 'block';
+      lockedHint.textContent = t('lockedHint');
+    }
+
+    // Lock live price + API + kabul buy + calc inputs when inactive
+    var lockIds = ['top', 'kabulSection', 'kgSection'];
+    // More precise: lock price box, api controls, kabul input, weight inputs
+    [
+      'manualGoldPrice', 'apiAutoToggle', 'kabulPriceInput',
+      'gramInput', 'kgInput', 'tolaInput', 'ounceInput'
+    ].forEach(function (id) {
+      var node = document.getElementById(id);
+      if (!node) return;
+      node.disabled = !on;
+    });
+
+    var priceBox = document.querySelector('.manual-price-box');
+    var apiBox = document.querySelector('.api-controls');
+    var chartPanel = document.getElementById('chartPanel');
+    [priceBox, apiBox, chartPanel].forEach(function (n) {
+      if (!n) return;
+      if (on) n.classList.remove('feature-locked');
+      else n.classList.add('feature-locked');
+    });
+    var kabulSec = document.getElementById('kabulSection');
+    var kgSec = document.getElementById('kgSection');
+    [kabulSec, kgSec].forEach(function (n) {
+      if (!n) return;
+      if (on) n.classList.remove('feature-locked');
+      else n.classList.add('feature-locked');
+    });
+
+    // Stop API if locked
+    if (!on && window.MM_API) {
+      MM_API.stop();
+      if (el.apiAutoToggle) el.apiAutoToggle.checked = false;
+      MM_API.setAutoOn(false);
+    }
+  }
+
 
   function $(id) { return document.getElementById(id); }
   function t(key, vars) { return window.MM_t(key, vars); }
@@ -73,6 +139,7 @@
       el.priceStatus.style.color = 'var(--text-soft)';
     }
     updateQuotaUI();
+    applyAccessControl();
   }
 
   function setLang(lang) {
@@ -92,6 +159,10 @@
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem(THEME_KEY, next);
     MM_CHART.draw();
+    if (_chartSrc === 'tv') {
+      _tvInited = false;
+      initTradingViewEmbed();
+    }
   }
 
   function setPriceStatus(msg, isError) {
@@ -274,9 +345,13 @@
       el.apiAutoToggle.addEventListener('change', function () {
         var nowOn = MM_API.setAutoOn(el.apiAutoToggle.checked);
         if (el.apiToggleLabel) el.apiToggleLabel.textContent = nowOn ? t('apiOn') : t('apiOffLabel');
-        if (nowOn) {
+        if (nowOn && isUnlocked()) {
           setPriceStatus(t('fetching'), false);
           MM_API.start(onApiPrice, onApiError, onApiQuota);
+        } else if (nowOn && !isUnlocked()) {
+          el.apiAutoToggle.checked = false;
+          MM_API.setAutoOn(false);
+          setPriceStatus(t('lockedHint'), true);
         } else {
           MM_API.stop();
           setPriceStatus(t('apiOff'), false);
@@ -284,19 +359,68 @@
       });
     }
     if (el.apiToggleLabel) el.apiToggleLabel.textContent = on ? t('apiOn') : t('apiOffLabel');
-    if (on) {
+    if (on && isUnlocked()) {
       setPriceStatus(t('fetching'), false);
       MM_API.start(onApiPrice, onApiError, onApiQuota);
-    } else setPriceStatus(t('apiOff'), false);
+    } else {
+      if (!isUnlocked()) setPriceStatus(t('lockedHint'), false);
+      else setPriceStatus(t('apiOff'), false);
+    }
     updateQuotaUI();
   }
 
   function loadInitialSeries() {
     MM_API.fetchSeries().then(function (series) {
       MM_CHART.setSeries(series);
-      // series fetch also costs credits — optional; if fails, chart fills from live ticks
     }).catch(function () { /* ignore */ });
   }
+
+  var _chartSrc = localStorage.getItem('mm_chart_src') || 'live';
+  var _tvInited = false;
+
+  function initTradingViewEmbed() {
+    var wrap = document.getElementById('tvChartWrap');
+    if (!wrap || _tvInited) return;
+    wrap.innerHTML = '';
+    var isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    var iframe = document.createElement('iframe');
+    iframe.title = 'TradingView XAUUSD';
+    iframe.setAttribute('allowtransparency', 'true');
+    iframe.setAttribute('scrolling', 'no');
+    iframe.setAttribute('frameborder', '0');
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    // Official TradingView embed widget via iframe
+    var theme = isDark ? 'dark' : 'light';
+    iframe.src = 'https://s.tradingview.com/widgetembed/?frameElementId=tv_xau&symbol=OANDA%3AXAUUSD&interval=60&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=0b0a09&theme=' + theme + '&style=1&timezone=Asia%2FKabul&withdateranges=1&studies=%5B%5D&hideideas=1&locale=' + (window.MM_STATE.lang === 'en' ? 'en' : 'fa_IR');
+    wrap.appendChild(iframe);
+    _tvInited = true;
+  }
+
+  function setChartSource(src) {
+    if (src !== 'live' && src !== 'tv') src = 'live';
+    _chartSrc = src;
+    localStorage.setItem('mm_chart_src', src);
+    var live = document.getElementById('liveChartWrap');
+    var tv = document.getElementById('tvChartWrap');
+    var bLive = document.getElementById('btnChartLive');
+    var bTv = document.getElementById('btnChartTv');
+    if (live) live.style.display = src === 'live' ? 'block' : 'none';
+    if (tv) tv.style.display = src === 'tv' ? 'block' : 'none';
+    if (bLive) bLive.classList.toggle('active', src === 'live');
+    if (bTv) bTv.classList.toggle('active', src === 'tv');
+    if (src === 'tv') initTradingViewEmbed();
+    if (src === 'live') MM_CHART.draw();
+  }
+
+  function bindChartSourceTabs() {
+    var bLive = document.getElementById('btnChartLive');
+    var bTv = document.getElementById('btnChartTv');
+    if (bLive) bLive.addEventListener('click', function () { setChartSource('live'); });
+    if (bTv) bTv.addEventListener('click', function () { setChartSource('tv'); });
+    setChartSource(_chartSrc);
+  }
+
 
   function bindNav() {
     document.querySelectorAll('.nav-item').forEach(function (btn) {
@@ -332,13 +456,24 @@
     loadKabulPrice();
     loadManualGoldPrice();
     applyI18n();
+    applyAccessControl();
 
     MM_CHART.init('liveChart');
+    bindChartSourceTabs();
     if (el.chartToggleBtn) {
       el.chartToggleBtn.addEventListener('click', function () {
-        MM_CHART.toggle();
-        el.chartToggleBtn.textContent = MM_CHART.isHidden() ? t('showChart') : t('hideChart');
+        var panel = document.getElementById('chartPanel');
+        var hidden = panel && panel.style.display === 'none';
+        if (panel) panel.style.display = hidden ? 'block' : 'none';
+        localStorage.setItem('mm_chart_hidden', hidden ? '0' : '1');
+        el.chartToggleBtn.textContent = (!hidden) ? t('showChart') : t('hideChart');
+        if (hidden && _chartSrc === 'live') MM_CHART.draw();
       });
+      if (localStorage.getItem('mm_chart_hidden') === '1') {
+        var panel0 = document.getElementById('chartPanel');
+        if (panel0) panel0.style.display = 'none';
+        el.chartToggleBtn.textContent = t('showChart');
+      }
     }
 
     if (el.themeToggle) el.themeToggle.addEventListener('click', toggleTheme);
@@ -364,7 +499,7 @@
 
     bindNav();
     bindApiToggle();
-    loadInitialSeries();
+    if (isUnlocked()) loadInitialSeries();
 
     if (window.MM_STATE.goldPrice) { recalcKabul(); recalcKg('gram'); }
     else recalcKg('gram');
